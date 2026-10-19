@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "KickStudy",
+    "slug": "kickstudy",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F5F3ED",
+    "android": { "package": "org.kickstudy.app" },
+    "web": { "name": "KickStudy", "bundler": "metro" }
+  }
+}
