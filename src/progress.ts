@@ -79,7 +79,7 @@ function validQuestion(value: unknown): value is Question {
     typeof value.explanation === 'string' && natural(value.answerMinor) &&
     ['percent', 'addition', 'discount'].includes(value.skill as string);
 }
-function validSession(value: unknown): value is Omit<Session, 'cursor'> {
+function validSession(value: unknown): value is Omit<Session, 'cursor'> & Record<string, unknown> {
   return record(value) && typeof value.id === 'string' && validMode(value.mode) && validLevel(value.level) &&
     Array.isArray(value.questions) && value.questions.length > 0 && value.questions.length <= 10 && value.questions.every(validQuestion) &&
     Array.isArray(value.answers) && value.answers.length <= value.questions.length && value.answers.every(answer => answer === null || natural(answer));
