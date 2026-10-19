@@ -9,6 +9,7 @@ export type Question = {
   prompt: string;
   answerMinor: number;
   explanation: string;
+  cardDiscount?: Question;
 };
 
 export const SESSION_LENGTH = 10;
@@ -40,20 +41,61 @@ export function parseAnswer(input: string): number | null {
   return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
 }
 
+export const DISCOUNT_CARD_CHANCE = 0.25;
+
+export function wholeRubleDiscountRates(totalMinor: number): number[] {
+  if (!Number.isSafeInteger(totalMinor) || totalMinor <= 0 || totalMinor % 100 !== 0 ||
+    !Number.isSafeInteger(totalMinor * 100)) return [];
+  const totalRubles = totalMinor / 100;
+  return Array.from({ length: 25 }, (_, index) => index + 1)
+    .filter(rate => totalRubles * rate % 100 === 0);
+}
+
+export function createCardDiscount(totalMinor: number, random: Random = Math.random): Question | undefined {
+  const rates = wholeRubleDiscountRates(totalMinor);
+  if (!rates.length) return undefined;
+  const rate = pick(rates, random);
+  const totalRubles = totalMinor / 100;
+  const discountMinor = totalRubles * rate;
+  const answerMinor = totalMinor - discountMinor;
+  return {
+    id: `discount:${totalRubles}:${rate}`,
+    skill: 'discount',
+    prompt: `Ты приложил скидочную карту: скидка ${rate}% на всю корзину. Без скидки — ${formatAmount(totalMinor)} ₽. Сколько заплатишь?`,
+    answerMinor,
+    explanation: `Скидка: ${formatAmount(totalMinor)} × ${rate} / 100 = ${formatAmount(discountMinor)} ₽. К оплате: ${formatAmount(totalMinor)} − ${formatAmount(discountMinor)} = ${formatAmount(answerMinor)} ₽.`,
+  };
+}
+
 export function generateQuestion(skill: Skill, level: Level, random: Random = Math.random): Question {
   const basic = level === 'basic';
   if (skill === 'addition') {
-    const count = basic ? 2 : 3;
+    const count = integer(2, 5, random);
+    const maxPrice = basic ? 599 : 1499;
+    // A mix of everyday prices and round tens: roughly a third end in zero.
     const prices = Array.from({ length: count }, () =>
-      basic ? integer(3, 35, random) * 1000 : integer(20, 490, random) * 100 + pick([50, 90, 99], random),
+      (random() < 0.25
+        ? integer(3, Math.floor(maxPrice / 10), random) * 10
+        : integer(25, maxPrice, random)) * 100,
     );
+    const hasCard = random() < DISCOUNT_CARD_CHANCE;
+    // Decide the event once, then make its basket eligible before it is shown.
+    // Moving a non-round price by at most 3 rubles guarantees at least a 25% option.
+    const initialTotal = prices.reduce((sum, price) => sum + price, 0);
+    if (hasCard && !wholeRubleDiscountRates(initialTotal).length) {
+      const adjustment = (4 - (initialTotal / 100) % 4) % 4;
+      let last = prices.length - 1;
+      while (prices[last] % 1000 === 0) last--;
+      prices[last] += (prices[last] / 100 + adjustment <= maxPrice ? adjustment : adjustment - 4) * 100;
+    }
     const answerMinor = prices.reduce((sum, price) => sum + price, 0);
     return {
       id: `addition:${prices.join(':')}`,
       skill,
       prompt: `В корзине товары за ${prices.map(price => `${formatAmount(price)} ₽`).join(', ')}. Сколько всего?`,
       answerMinor,
-      explanation: `${prices.map(formatAmount).join(' + ')} = ${formatAmount(answerMinor)} ₽. Складывай отдельно рубли и копейки, затем объедини результат.`,
+      explanation: `${prices.map(formatAmount).join(' + ')} = ${formatAmount(answerMinor)} ₽. Можно складывать по разрядам: сначала сотни, затем десятки и единицы.`,
+      cardDiscount: hasCard ? createCardDiscount(answerMinor, random) : undefined,
     };
   }
 

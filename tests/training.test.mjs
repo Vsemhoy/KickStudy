@@ -56,7 +56,7 @@ test('sessions cover the chosen skills and contain ten different tasks', () => {
   }
 });
 
-const start = () => updateProgress(emptyProgress(), { type: 'start', mode: 'mixed', level: 'challenge', id: 'session-1' });
+const start = () => updateProgress(emptyProgress(), { type: 'start', mode: 'percent', level: 'challenge', id: 'session-1' });
 const next = { type: 'next', finishedAt: '2026-10-19T19:00:00.000Z' };
 
 test('checked answers survive reload and repeated taps do not count twice', () => {

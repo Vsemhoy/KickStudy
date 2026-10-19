@@ -6,7 +6,7 @@ import type { Question } from './training';
 
 const PLACE_NAMES = ['Единицы', 'Десятки', 'Сотни', 'Тысячи', 'Десятки тысяч', 'Сотни тысяч'];
 
-export function MultiplicationHelp({ question }: { question: Question }) {
+export function MultiplicationHelp({ question, timesOneLine = null }: { question: Question; timesOneLine?: string | null }) {
   const [expanded, setExpanded] = useState(false);
   const work = getPercentMultiplication(question);
   if (!work) return null;
@@ -24,6 +24,13 @@ export function MultiplicationHelp({ question }: { question: Question }) {
         <Text aria-hidden style={styles.chevron}>{expanded ? '−' : '+'}</Text>
       </Pressable>
       {expanded && <View style={styles.content}>
+        {work.multiplier === 1 ? <>
+          {timesOneLine && <>
+            <Text style={styles.sectionTitle}>А не надо умножать {expression} столбиком!</Text>
+            <Text style={styles.body}>Пендель: {timesOneLine}</Text>
+          </>}
+          <Text style={styles.body}>При умножении на 1 число не меняется. Один раз берём {formatAmount(work.multiplicandMinor)} — получаем те же {formatAmount(work.multiplicandMinor)}.</Text>
+        </> : <>
         <Text style={styles.body}>1% = {formatAmount(work.multiplicandMinor)} ₽. Чтобы найти {work.multiplier}%, умножаем {formatAmount(work.multiplicandMinor)} на {work.multiplier}.</Text>
         {work.decimalPlaces > 0 && <Text style={styles.body}>
           Сначала считаем без запятой: {work.integerFactor} × {work.multiplier}. В конце отделим справа {work.decimalPlaces === 1 ? 'одну цифру' : 'две цифры'} запятой.
@@ -45,6 +52,7 @@ export function MultiplicationHelp({ question }: { question: Question }) {
           }>{work.column}</Text>
         </ScrollView>
         {work.decimalPlaces > 0 && <Text style={styles.body}>Возвращаем запятую: {work.integerProduct} ÷ {10 ** work.decimalPlaces} = {formatAmount(work.resultMinor)}.</Text>}
+        </>}
         <Text style={styles.result}>{work.multiplier}% = {expression} = {formatAmount(work.resultMinor)} ₽.</Text>
         {question.skill === 'discount' && <Text style={styles.body}>Это размер скидки. К оплате: {formatAmount(work.multiplicandMinor * 100)} − {formatAmount(work.resultMinor)} = {formatAmount(question.answerMinor)} ₽.</Text>}
       </View>}

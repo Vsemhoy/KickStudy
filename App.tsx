@@ -5,11 +5,11 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { correctCount } from './src/progress';
+import { answeredExercises, correctCount, isCardStage } from './src/progress';
 import { formatAmount, MODE_LABELS, parseAnswer, SESSION_LENGTH, SKILL_LABELS } from './src/training';
 import type { Level, Mode } from './src/training';
 import { useProgress } from './src/useProgress';
-import { MultiplicationHelp } from './src/MultiplicationHelp';
+import { Explanation } from './src/Explanation';
 
 type Screen = 'home' | 'training' | 'result';
 type ButtonProps = { label: string; onPress: () => void; secondary?: boolean; disabled?: boolean };
@@ -35,16 +35,28 @@ function AppContent() {
   const [input, setInput] = useState('');
   const [inputError, setInputError] = useState(false);
   const scroll = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
   const session = progress.active;
-  const question = session?.questions[session.cursor];
-  const checked = !!session && session.answers.length > session.cursor;
+  const baseQuestion = session?.questions[session.cursor];
+  const cardStage = !!session && isCardStage(session);
+  const question = cardStage ? baseQuestion?.cardDiscount : baseQuestion;
+  const submittedAnswer = cardStage ? session?.cardAnswers?.[session.cursor] : session?.answers[session.cursor];
+  const checked = submittedAnswer !== undefined;
+  const completedQuestions = session ? session.cursor + Number(checked) : 0;
   const result = progress.recent[0];
+  const resultExercises = result ? answeredExercises(result) : [];
 
   useEffect(() => {
     setInput('');
     setInputError(false);
     scroll.current?.scrollTo({ y: 0, animated: false });
-  }, [session?.id, session?.cursor, screen]);
+  }, [session?.id, session?.cursor, cardStage, screen]);
+
+  useEffect(() => {
+    if (!ready || screen !== 'training' || checked) return;
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [ready, screen, session?.id, session?.cursor, cardStage, checked]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -66,7 +78,7 @@ function AppContent() {
     if (value === null) { setInputError(true); return; }
     Keyboard.dismiss();
     setInputError(false);
-    dispatch({ type: 'answer', value });
+    dispatch({ type: cardStage ? 'answer-card' : 'answer', value });
   };
   const next = () => {
     if (!session || !checked) return;
@@ -116,7 +128,7 @@ function AppContent() {
               {session ? <View style={styles.card}>
                 <Text style={styles.eyebrow}>ТВОЯ ТРЕНИРОВКА СОХРАНЕНА</Text>
                 <Text style={styles.cardTitle}>{MODE_LABELS[session.mode]}</Text>
-                <Text style={styles.body}>Ответов: {session.answers.length} из {session.questions.length}. Продолжим с того же места.</Text>
+                <Text style={styles.body}>Задача {session.cursor + 1} из {session.questions.length}{isCardStage(session) ? ' · скидочная карта' : ''}. Продолжим с того же места.</Text>
                 <Button label="Продолжить тренировку →" onPress={() => setScreen('training')} />
               </View> : <View style={styles.card}>
                 <Text accessibilityRole="header" style={styles.cardTitle}>Что тренируем?</Text>
@@ -143,7 +155,7 @@ function AppContent() {
                     </Pressable>
                   ))}
                 </View>
-                <Text style={styles.muted}>{level === 'basic' ? 'Круглые суммы и знакомые проценты.' : 'Неудобные проценты и цены с копейками.'}</Text>
+                <Text style={styles.muted}>{level === 'basic' ? 'В корзине — цены до 599 ₽. Знакомые проценты.' : 'В корзине — цены до 1 499 ₽. Более сложные проценты.'}</Text>
                 <Button label="Начать · 10 задач →" onPress={start} />
               </View>}
 
@@ -151,7 +163,7 @@ function AppContent() {
                 <Text accessibilityRole="header" style={styles.cardTitle}>Последние подходы</Text>
                 {progress.recent.slice(0, 3).map(item => <View key={item.id} style={styles.historyRow}>
                   <View style={styles.flex}><Text style={styles.optionTitle}>{MODE_LABELS[item.mode]}</Text><Text style={styles.muted}>{new Date(item.finishedAt).toLocaleDateString('ru-RU')} · {item.level === 'basic' ? 'База' : 'Сложнее'}</Text></View>
-                  <Text style={styles.historyScore}>{correctCount(item)}/{item.answers.length}</Text>
+                  <Text style={styles.historyScore}>{correctCount(item)}/{answeredExercises(item).length}</Text>
                 </View>)}
               </View>}
               <Text style={styles.footer}>Без таймера. В своём темпе.{ '\n' }Прогресс хранится только на этом устройстве.{ '\n' }Цены в рублях — учебные примеры.</Text>
@@ -159,28 +171,32 @@ function AppContent() {
 
             {screen === 'training' && session && question && <>
               <Pressable accessibilityRole="button" onPress={() => { Keyboard.dismiss(); setScreen('home'); }} style={styles.back}><Text style={styles.backText}>← На главную</Text></Pressable>
-              <View style={styles.progressHeader}><Text style={styles.eyebrow}>{SKILL_LABELS[question.skill]}</Text><Text style={styles.progressCount}>{session.cursor + 1} / {SESSION_LENGTH}</Text></View>
-              <View accessible accessibilityRole="progressbar" accessibilityLabel="Решено задач" accessibilityValue={{ min: 0, max: SESSION_LENGTH, now: session.answers.length }} style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${session.answers.length / SESSION_LENGTH * 100}%` }]} />
+              <View style={styles.progressHeader}><Text style={styles.eyebrow}>{cardStage ? 'Скидочная карта · шаг 2' : SKILL_LABELS[question.skill]}</Text><Text style={styles.progressCount}>{session.cursor + 1} / {SESSION_LENGTH}</Text></View>
+              <View accessible accessibilityRole="progressbar" accessibilityLabel="Решено задач" accessibilityValue={{ min: 0, max: SESSION_LENGTH, now: completedQuestions }} style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${completedQuestions / SESSION_LENGTH * 100}%` }]} />
               </View>
+              {cardStage && baseQuestion && <View style={[styles.feedback, session.answers[session.cursor] === baseQuestion.answerMinor ? styles.correct : styles.incorrect]}>
+                <Text style={styles.cardTitle}>{session.answers[session.cursor] === baseQuestion.answerMinor ? 'Сумма корзины верная!' : 'Сначала уточним сумму корзины'}</Text>
+                <Text style={styles.body}>Твой ответ: {formatAmount(session.answers[session.cursor]!)} ₽. Сумма без скидки: {formatAmount(baseQuestion.answerMinor)} ₽.</Text>
+                <Explanation key={`${session.id}:${session.cursor}:basket`} question={baseQuestion} answer={session.answers[session.cursor]} />
+              </View>}
               <View style={styles.questionCard}>
-                <Text style={styles.eyebrow}>ПОСЧИТАЙ В УМЕ</Text>
+                <Text style={styles.eyebrow}>{cardStage ? 'А НА КАССЕ СЮРПРИЗ' : 'ПОСЧИТАЙ В УМЕ'}</Text>
                 <Text accessibilityRole="header" style={styles.question}>{question.prompt}</Text>
                 {!checked ? <>
                   <Text style={styles.fieldLabel}>Твой ответ в рублях</Text>
-                  <TextInput accessibilityLabel="Твой ответ в рублях" placeholder="Например, 125,50" placeholderTextColor={colors.muted} value={input}
+                  <TextInput key={`${session.id}:${session.cursor}:${cardStage}`} ref={inputRef} autoFocus accessibilityLabel="Твой ответ в рублях" placeholder="Например, 125,50" placeholderTextColor={colors.muted} value={input}
                     onChangeText={value => { setInput(value); setInputError(false); }} keyboardType="decimal-pad" returnKeyType="done" autoCorrect={false}
                     maxLength={18} onSubmitEditing={answer} style={[styles.input, inputError && styles.inputInvalid]} />
                   {inputError && <Text accessibilityRole="alert" style={styles.errorText}>Введи число: например, 125 или 125,50.</Text>}
                   <Button label="Проверить" onPress={answer} disabled={!input.trim()} />
-                  <Button label="Пока не знаю" secondary onPress={() => { Keyboard.dismiss(); dispatch({ type: 'answer', value: null }); }} />
+                  <Button label="Пока не знаю" secondary onPress={() => { Keyboard.dismiss(); dispatch({ type: cardStage ? 'answer-card' : 'answer', value: null }); }} />
                 </> : <>
-                  <View accessibilityLiveRegion="polite" style={[styles.feedback, session.answers[session.cursor] === question.answerMinor ? styles.correct : styles.incorrect]}>
-                    <Text style={styles.cardTitle}>{session.answers[session.cursor] === question.answerMinor ? 'Верно!' : 'Разберём вместе'}</Text>
-                    <Text style={styles.body}>{session.answers[session.cursor] === null ? 'Ты пропустил задачу.' : `Твой ответ: ${formatAmount(session.answers[session.cursor]!)} ₽.`}</Text>
+                  <View accessibilityLiveRegion="polite" style={[styles.feedback, submittedAnswer === question.answerMinor ? styles.correct : styles.incorrect]}>
+                    <Text style={styles.cardTitle}>{submittedAnswer === question.answerMinor ? 'Верно!' : 'Разберём вместе'}</Text>
+                    <Text style={styles.body}>{submittedAnswer === null ? 'Ты пропустил задачу.' : `Твой ответ: ${formatAmount(submittedAnswer!)} ₽.`}</Text>
                     <Text style={styles.answer}>Ответ: {formatAmount(question.answerMinor)} ₽</Text>
-                    <Text style={styles.body}>{question.explanation}</Text>
-                    <MultiplicationHelp key={`${session.id}:${session.cursor}`} question={question} />
+                    <Explanation key={`${session.id}:${session.cursor}:${cardStage}`} question={question} answer={submittedAnswer!} />
                   </View>
                   <Button label={session.cursor === SESSION_LENGTH - 1 ? 'Посмотреть результат →' : 'Следующая задача →'} onPress={next} />
                 </>}
@@ -192,12 +208,13 @@ function AppContent() {
             {screen === 'result' && result && <>
               <View style={styles.hero}>
                 <Text style={styles.eyebrow}>ПОДХОД ЗАВЕРШЁН</Text>
-                <Text accessibilityRole="header" style={styles.title}>{correctCount(result) === result.answers.length ? 'Чистая работа.' : 'Практика в копилку.'}</Text>
+                <Text accessibilityRole="header" style={styles.title}>{correctCount(result) === resultExercises.length ? 'Чистая работа.' : 'Практика в копилку.'}</Text>
                 <Text style={styles.body}>{MODE_LABELS[result.mode]} · {result.level === 'basic' ? 'База' : 'Сложнее'}</Text>
               </View>
               <View style={styles.resultCard}>
-                <Text style={styles.resultNumber}>{correctCount(result)}<Text style={styles.resultDenominator}> / {result.answers.length}</Text></Text>
+                <Text style={styles.resultNumber}>{correctCount(result)}<Text style={styles.resultDenominator}> / {resultExercises.length}</Text></Text>
                 <Text style={styles.body}>правильных ответов</Text>
+                {resultExercises.length > result.answers.length && <Text style={styles.muted}>Включая ответы по скидочным картам.</Text>}
                 <Text style={styles.muted}>{result.answers.length < SESSION_LENGTH ? 'Короткий подход тоже считается. Ответы учтены в статистике.' : 'Ответы учтены в статистике. Можно отдохнуть или сделать ещё подход.'}</Text>
               </View>
               <Button label="Ещё 10 задач →" onPress={() => {
@@ -206,14 +223,13 @@ function AppContent() {
                 setScreen('training');
               }} />
               <Button label="На главную" secondary onPress={() => setScreen('home')} />
-              {correctCount(result) < result.answers.length && <View style={styles.history}>
+              {correctCount(result) < resultExercises.length && <View style={styles.history}>
                 <Text accessibilityRole="header" style={styles.cardTitle}>Что стоит закрепить</Text>
-                {result.questions.map((item, index) => result.answers[index] !== item.answerMinor && <View key={`${item.id}-${index}`} style={styles.reviewCard}>
+                {resultExercises.map(({ question: item, answer: itemAnswer }, index) => itemAnswer !== item.answerMinor && <View key={`${item.id}-${index}`} style={styles.reviewCard}>
                   <Text style={styles.optionTitle}>{item.prompt}</Text>
-                  <Text style={styles.muted}>{result.answers[index] === null ? 'Пропущено' : `Твой ответ: ${formatAmount(result.answers[index]!)} ₽`}</Text>
+                  <Text style={styles.muted}>{itemAnswer === null ? 'Пропущено' : `Твой ответ: ${formatAmount(itemAnswer)} ₽`}</Text>
                   <Text style={styles.answer}>Ответ: {formatAmount(item.answerMinor)} ₽</Text>
-                  <Text style={styles.body}>{item.explanation}</Text>
-                  <MultiplicationHelp question={item} />
+                  <Explanation question={item} answer={itemAnswer} />
                 </View>)}
               </View>}
             </>}
